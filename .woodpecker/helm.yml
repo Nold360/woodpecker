@@ -1,30 +1,47 @@
+matrix:
+  CHART_NAME:
+    - woodpecker-agent
+    - woodpecker-server
+
 variables:
   - &when_path
-    - "charts/**"
+    - "charts/${CHART_NAME}/*"
     - ".woodpecker/helm.yml"
 
 pipeline:
   set-version:
     image: alpine/helm:3.5.3
     commands:
-      # use tag name or 0.0.0 if not running on a tag
-      - export CHART_VERSION="${CI_COMMIT_TAG##v}"
-      - export CHART_VERSION=$${CHART_VERSION:=0.0.0}
-      - echo "Version $CHART_VERSION"
-      - sed -i "s/<version>/$CHART_VERSION/g" charts/woodpecker-agent/Chart.yaml
-      - sed -i "s/<version>/$CHART_VERSION/g" charts/woodpecker-server/Chart.yaml
-      - cat charts/woodpecker-agent/Chart.yaml
-      - cat charts/woodpecker-server/Chart.yaml
+      - export APP_VERSION="${CI_COMMIT_TAG##v}"
+      - export APP_VERSION=$${APP_VERSION:=next}
+      - echo "AppVersion $APP_VERSION"
+      - sed -i "s/<version>/$APP_VERSION/g" charts/${CHART_NAME}/Chart.yaml
+      - cat charts/${CHART_NAME}/Chart.yaml
     when:
       path: *when_path
 
   lint:
     image: alpine/helm:3.5.3
     commands:
-      - helm lint charts/woodpecker-agent/
-      - helm lint charts/woodpecker-server/
+      - helm lint charts/${CHART_NAME}/
     when:
       path: *when_path
+
+  pr-check:
+    image: alpine/git
+    commands:
+      - git fetch --all -v
+      - CHART_VERSION=$(awk '/^version:.*/ { print $2 }' charts/${CHART_NAME}/Chart.yaml)
+      - LAST_VERSION=$(git diff --no-color origin/master -- charts/${CHART_NAME}/Chart.yaml | awk '/^-version:/ { print $2 }')
+      - git diff --no-color origin/master -- charts/${CHART_NAME}/Chart.yaml
+      - |
+        if [ -z "$${LAST_VERSION}" ] || [  "$${CHART_VERSION}" == "$(echo -e "${CHART_VERSION}\n${LAST_VERSION}" | sort -V | head -n1)" ] ; then
+          echo "${CHART_NAME}: Version has not been updated! ($${CHART_VERSION} vs. $${LAST_VERSION})"
+          exit 1
+        fi
+    when:
+      - path: *when_path
+        event: pull_request
 
   release:
     image: quay.io/helmpack/chart-releaser:v1.4.0
@@ -35,11 +52,10 @@ pipeline:
       - git config --global user.email "woodpecker-bot@obermui.de"
       - git config --global user.name "woodpecker-bot"
       - mkdir -p .cr-index
-      - cr package charts/woodpecker-server
-      - cr package charts/woodpecker-agent
+      - cr package charts/${CHART_NAME}
       - cr upload --owner woodpecker-ci --git-repo woodpecker-ci.github.io --release-name-template "helm-{{ .Name }}-{{ .Version }}"
       - git clone https://github.com/woodpecker-ci/woodpecker-ci.github.io.git
       - cd woodpecker-ci.github.io/ && cr index --owner woodpecker-ci --git-repo woodpecker-ci.github.io --pages-branch master --package-path ../.cr-release-packages --index-path ../.cr-index/index.yaml --charts-repo https://woodpecker-ci.org --push --release-name-template "helm-{{ .Name }}-{{ .Version }}"
     when:
-      event: tag
+      branch: master
       path: *when_path
