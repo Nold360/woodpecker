@@ -9,20 +9,6 @@ variables:
     - ".woodpecker/helm.yml"
 
 pipeline:
-    pre-check:
-    image: alpine/helm:3.5.3
-    commands:
-      - git fetch --all -v
-      - CHART_VERSION=$(awk '/^version:.*/ { print $2 }' charts/${CHART_NAME}/Chart.yaml)
-      - LAST_VERSION=$(git diff master charts/${CHART_NAME}/Chart.yaml| grep -E '^-version:')
-      - |
-        if [ -z "${LAST_VERSION}"] || [  "${CHART_VERSION}" == "$(echo -e "${CHART_VERSION}\n${LAST_VERSION}" | sort -V | head -n1)" ] ; then
-          echo "Chart Version has not been bumped! (${CHART_VERSION} vs. ${LAST_VERSION})"
-          exit 1
-        fi
-    when:
-      path: *when_path
-
   set-version:
     image: alpine/helm:3.5.3
     commands:
@@ -38,6 +24,20 @@ pipeline:
     image: alpine/helm:3.5.3
     commands:
       - helm lint charts/${CHART_NAME}/
+    when:
+      path: *when_path
+
+  pre-check:
+    image: alpine/git
+    commands:
+      - git fetch --all -v
+      - CHART_VERSION=$(awk '/^version:.*/ { print $2 }' charts/${CHART_NAME}/Chart.yaml)
+      - LAST_VERSION=$(git diff master charts/${CHART_NAME}/Chart.yaml| grep -E '^-version:')
+      - |
+        if [ -z "${LAST_VERSION}"] || [  "${CHART_VERSION}" == "$(echo -e "${CHART_VERSION}\n${LAST_VERSION}" | sort -V | head -n1)" ] ; then
+          echo "Chart Version has not been bumped! (${CHART_VERSION} vs. ${LAST_VERSION})"
+          exit 1
+        fi
     when:
       path: *when_path
 
