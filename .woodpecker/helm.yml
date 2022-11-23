@@ -5,7 +5,7 @@ matrix:
 
 variables:
   - &when_path
-    - "charts/${CHART_NAME}"
+    - "charts/${CHART_NAME}/*"
     - ".woodpecker/helm.yml"
 
 pipeline:
@@ -27,19 +27,21 @@ pipeline:
     when:
       path: *when_path
 
-  pre-check:
+  pr-check:
     image: alpine/git
     commands:
       - git fetch --all -v
       - CHART_VERSION=$(awk '/^version:.*/ { print $2 }' charts/${CHART_NAME}/Chart.yaml)
-      - LAST_VERSION=$(git diff master charts/${CHART_NAME}/Chart.yaml| grep -E '^-version:')
+      - LAST_VERSION=$(git diff --no-color origin/master -- charts/${CHART_NAME}/Chart.yaml | awk '/^-version:/ { print $2 }')
+      - git diff --no-color origin/master -- charts/${CHART_NAME}/Chart.yaml
       - |
         if [ -z "${LAST_VERSION}"] || [  "${CHART_VERSION}" == "$(echo -e "${CHART_VERSION}\n${LAST_VERSION}" | sort -V | head -n1)" ] ; then
           echo "Chart Version has not been bumped! (${CHART_VERSION} vs. ${LAST_VERSION})"
           exit 1
         fi
     when:
-      path: *when_path
+      - path: *when_path
+        event: pull_request
 
   release:
     image: quay.io/helmpack/chart-releaser:v1.4.0
