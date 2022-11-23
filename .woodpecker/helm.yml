@@ -40,8 +40,8 @@ pipeline:
           exit 1
         fi
     when:
-      path: *when_path
-      event: pull_request
+      - path: *when_path
+        event: pull_request
 
   release:
     image: quay.io/helmpack/chart-releaser:v1.4.0
